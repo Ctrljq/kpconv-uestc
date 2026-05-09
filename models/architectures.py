@@ -14,7 +14,7 @@
 #      Hugues THOMAS - 06/03/2020
 #
 
-from models.blocks import *
+from models.blocks import *  # includes AttentionGate
 import numpy as np
 
 
@@ -267,12 +267,19 @@ class KPFCNN(nn.Module):
                 start_i = block_i
                 break
 
+        # Collect gate dims dynamically during decoder loop
+        _gate_dims = []
+
         # Loop over consecutive blocks
         for block_i, block in enumerate(config.architecture[start_i:]):
 
             # Add dimension of skip connection concat
             if block_i > 0 and 'upsample' in config.architecture[start_i + block_i - 1]:
-                in_dim += self.encoder_skip_dims[layer]
+                F_g   = in_dim                              # decoder gating channels
+                F_l   = self.encoder_skip_dims[layer]       # encoder skip channels
+                F_int = max(F_l // 2, 16)                  # intermediate channels
+                _gate_dims.append((F_g, F_l, F_int))
+                in_dim += F_l
                 self.decoder_concats.append(block_i)
 
             # Apply the good block function defining tf ops
@@ -292,6 +299,13 @@ class KPFCNN(nn.Module):
                 layer -= 1
                 r *= 0.5
                 out_dim = out_dim // 2
+
+        # Build Attention Gates for skip connections (dims derived from decoder loop)
+        from models.blocks import AttentionGate
+        self.attention_gates = nn.ModuleList([
+            AttentionGate(F_g, F_l, F_int)
+            for F_g, F_l, F_int in _gate_dims
+        ])
 
         self.head_mlp = UnaryBlock(out_dim, config.first_features_dim, False, 0)
         self.head_softmax = UnaryBlock(config.first_features_dim, self.C, False, 0, no_relu=True)
@@ -326,6 +340,7 @@ class KPFCNN(nn.Module):
 
         # Loop over consecutive blocks
         skip_x = []
+        gate_idx = 0
         for block_i, block_op in enumerate(self.encoder_blocks):
             if block_i in self.encoder_skips:
                 skip_x.append(x)
@@ -333,7 +348,10 @@ class KPFCNN(nn.Module):
 
         for block_i, block_op in enumerate(self.decoder_blocks):
             if block_i in self.decoder_concats:
-                x = torch.cat([x, skip_x.pop()], dim=1)
+                skip_feat = skip_x.pop()
+                skip_feat = self.attention_gates[gate_idx](g=x, x=skip_feat)
+                x = torch.cat([x, skip_feat], dim=1)
+                gate_idx += 1
             x = block_op(x, batch)
 
         # Head of network

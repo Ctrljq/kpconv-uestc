@@ -33,7 +33,8 @@ from multiprocessing import Lock
 
 
 # OS functions
-from os import listdir
+import os
+from os import listdir, makedirs
 from os.path import exists, join, isdir
 
 # Dataset parent class
@@ -86,7 +87,13 @@ class S3DISDataset(PointCloudDataset):
         self.ignored_labels = np.array([])
 
         # Dataset folder
-        self.path = '../../Data/S3DIS'
+        # NOTE: The original KPConv code used a relative path ('../../Data/S3DIS') which depends on the current
+        # working directory when launching the script. This is fragile when running from the repo root.
+        # We instead resolve the default path relative to this file location (repo_root/Data/S3DIS), while still
+        # allowing users to override via the S3DIS_PATH environment variable.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default_path = join(repo_root, 'Data', 'S3DIS')
+        self.path = os.environ.get('S3DIS_PATH', default_path)
 
         # Type of task conducted on this dataset
         self.dataset_task = 'cloud_segmentation'
@@ -113,7 +120,7 @@ class S3DISDataset(PointCloudDataset):
         # Proportion of validation scenes
         self.cloud_names = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_5', 'Area_6']
         self.all_splits = [0, 1, 2, 3, 4, 5]
-        self.validation_split = 4
+        self.validation_split = getattr(config, 'validation_split', 4)
 
         # Number of models used per epoch
         if self.set == 'training':

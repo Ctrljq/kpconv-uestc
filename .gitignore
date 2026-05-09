@@ -1,4 +1,8 @@
+# ---------------------------------------------------------------------------
+# 仅提交源码：数据、训练输出、环境与缓存一律忽略
+# ---------------------------------------------------------------------------
 
+# --- 原有项目规则 ---
 **/build
 **/desktop.ini
 /results
@@ -7,12 +11,88 @@
 /kernels/dispositions
 core
 
-# VSCode related
-*.code-workspace
+# --- 本地数据与下载（勿提交大文件 / 机器相关 symlink）---
+/Data/
+/datasets/**/*.ply
+/datasets/**/*.pkl
+/datasets/**/*.npy
+/datasets/**/*.npz
+/datasets/**/*.h5
+/datasets/**/*.las
+/datasets/**/*.laz
 
-# Byte-compiled / optimized / DLL files
+# --- 训练输出与权重（任意路径）---
+**/checkpoints/
+**/val_preds*/
+**/val_preds_*/
+**/potentials/
+**/wandb/
+**/runs/
+**/lightning_logs/
+**/tensorboard/
+**/tb_logs/
+**/mlruns/
+*.tar
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.safetensors
+
+# --- 日志与临时文件 ---
+*.log
+*.log.*
+nohup.out
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# --- Python ---
 __pycache__/
 *.py[cod]
-
-# C extensions
+*$py.class
 *.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# --- 虚拟环境 ---
+.venv/
+venv/
+ENV/
+env/
+.env
+.env.*
+!.env.example
+
+# --- IDE / 编辑器 ---
+*.code-workspace
+.idea/
+.vscode/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- 系统 ---
+.DS_Store
+Thumbs.db
+desktop.ini

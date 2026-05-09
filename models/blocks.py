@@ -696,3 +696,33 @@ class MaxPoolBlock(nn.Module):
     def forward(self, x, batch):
         return max_pool(x, batch.pools[self.layer_ind + 1])
 
+
+class AttentionGate(nn.Module):
+    """
+    Attention Gate for KPFCNN skip connections.
+    Filters encoder features using decoder gating signal before concatenation.
+    Args:
+        F_g  : channel dim of decoder (gating) features
+        F_l  : channel dim of encoder (skip) features
+        F_int: intermediate channels, typically min(F_g, F_l) // 2
+    """
+    def __init__(self, F_g, F_l, F_int):
+        super(AttentionGate, self).__init__()
+        self.W_g = nn.Linear(F_g, F_int, bias=True)
+        self.W_x = nn.Linear(F_l, F_int, bias=True)
+        self.psi = nn.Linear(F_int, 1, bias=True)
+        self.relu = nn.ReLU(inplace=True)
+        self.sigmoid = nn.Sigmoid()
+        self.bn = nn.BatchNorm1d(F_l)
+
+    def forward(self, g, x):
+        """
+        g : decoder feature  [N, F_g]  — gating signal
+        x : encoder feature  [N, F_l]  — skip connection to filter
+        returns: attended encoder feature [N, F_l]
+        """
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        psi = self.relu(g1 + x1)
+        alpha = self.sigmoid(self.psi(psi))  # [N, 1]
+        return self.bn(x * alpha)

@@ -165,7 +165,7 @@ class S3DISConfig(Config):
     #####################
 
     # Maximal number of epochs
-    max_epoch = 500
+    max_epoch = 1000
 
     # Learning rate management
     learning_rate = 1e-2
@@ -177,10 +177,10 @@ class S3DISConfig(Config):
     batch_num = 6
 
     # Number of steps per epochs
-    epoch_steps = 500
+    epoch_steps = 50
 
     # Number of validation examples per epoch
-    validation_size = 50
+    validation_size = 10
 
     # Number of epoch between each checkpoint
     checkpoint_gap = 50
@@ -200,9 +200,12 @@ class S3DISConfig(Config):
     #   > 'batch': Each cloud in the batch has the same contribution (points are weighted according cloud sizes)
     segloss_balance = 'none'
 
+    # Validation area index: 0=Area_1, 1=Area_2, ..., 4=Area_5 (default)
+    validation_split = 4
+
     # Do we nee to save convergence
     saving = True
-    saving_path = None
+    saving_path = '/root/autodl-tmp/KPConv_results/'
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -228,8 +231,8 @@ if __name__ == '__main__':
     ###############
 
     # Choose here if you want to start training from a previous snapshot (None for new training)
-    # previous_training_path = 'Log_2020-03-19_19-53-27'
-    previous_training_path = ''
+    # previous_training_path = 'Log_2026-03-29_17-51-16'
+    previous_training_path = '/root/autodl-tmp/KPConv_results'
 
     # Choose index of checkpoint to start from. If None, uses the latest chkp
     chkp_idx = None
@@ -261,7 +264,8 @@ if __name__ == '__main__':
     config = S3DISConfig()
     if previous_training_path:
         config.load(os.path.join('results', previous_training_path))
-        config.saving_path = None
+        config.saving_path = '/root/autodl-tmp/KPConv_results/'
+        config.max_epoch = 1000
 
     # Get path from argument if given
     if len(sys.argv) > 1:
