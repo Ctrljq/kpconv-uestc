@@ -301,11 +301,15 @@ class KPFCNN(nn.Module):
                 out_dim = out_dim // 2
 
         # Build Attention Gates for skip connections (dims derived from decoder loop)
-        from models.blocks import AttentionGate
-        self.attention_gates = nn.ModuleList([
-            AttentionGate(F_g, F_l, F_int)
-            for F_g, F_l, F_int in _gate_dims
-        ])
+        self.use_attention_gate = getattr(config, 'use_attention_gate', True)
+        if self.use_attention_gate:
+            from models.blocks import AttentionGate
+            self.attention_gates = nn.ModuleList([
+                AttentionGate(F_g, F_l, F_int)
+                for F_g, F_l, F_int in _gate_dims
+            ])
+        else:
+            self.attention_gates = nn.ModuleList()
 
         self.head_mlp = UnaryBlock(out_dim, config.first_features_dim, False, 0)
         self.head_softmax = UnaryBlock(config.first_features_dim, self.C, False, 0, no_relu=True)
@@ -349,7 +353,8 @@ class KPFCNN(nn.Module):
         for block_i, block_op in enumerate(self.decoder_blocks):
             if block_i in self.decoder_concats:
                 skip_feat = skip_x.pop()
-                skip_feat = self.attention_gates[gate_idx](g=x, x=skip_feat)
+                if self.use_attention_gate:
+                    skip_feat = self.attention_gates[gate_idx](g=x, x=skip_feat)
                 x = torch.cat([x, skip_feat], dim=1)
                 gate_idx += 1
             x = block_op(x, batch)
@@ -410,7 +415,6 @@ class KPFCNN(nn.Module):
         correct = (predicted == target).sum().item()
 
         return correct / total
-
 
 
 

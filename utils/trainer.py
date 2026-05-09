@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pickle
+import json
 import os
 from os import makedirs, remove
 from os.path import exists, join
@@ -83,6 +84,8 @@ class ModelTrainer:
                                          lr=config.learning_rate,
                                          momentum=config.momentum,
                                          weight_decay=config.weight_decay)
+        self.best_miou = -1.0
+        self.best_epoch = 0
 
         # Choose to train on CPU or GPU
         if on_gpu and torch.cuda.is_available():
@@ -115,6 +118,9 @@ class ModelTrainer:
                 config.saving_path = time.strftime('results/Log_%Y-%m-%d_%H-%M-%S', time.gmtime())
             if not exists(config.saving_path):
                 makedirs(config.saving_path)
+            metrics_path = join(config.saving_path, 'metrics')
+            if not exists(metrics_path):
+                makedirs(metrics_path)
             config.save()
 
         return
@@ -265,14 +271,43 @@ class ModelTrainer:
                 torch.save(save_dict, checkpoint_path)
 
                 # Save checkpoints occasionally
-                if (self.epoch + 1) % config.checkpoint_gap == 0:
-                    checkpoint_path = join(checkpoint_directory, 'chkp_{:04d}.tar'.format(self.epoch + 1))
+                if self.epoch % config.checkpoint_gap == 0:
+                    checkpoint_path = join(checkpoint_directory, 'chkp_{:04d}.tar'.format(self.epoch))
                     torch.save(save_dict, checkpoint_path)
 
             # Validation
             net.eval()
-            self.validation(net, val_loader, config)
+            val_IoUs = self.validation(net, val_loader, config)
             net.train()
+
+            if config.saving and val_IoUs is not None:
+                miou = float(100 * np.mean(val_IoUs))
+                metrics_path = join(config.saving_path, 'metrics')
+                if not exists(metrics_path):
+                    makedirs(metrics_path)
+
+                final_metrics = {
+                    'epoch': int(self.epoch),
+                    'mIoU': miou,
+                    'class_IoUs': [float(100 * iou) for iou in val_IoUs],
+                }
+                with open(join(metrics_path, 'final_metrics.json'), 'w') as f:
+                    json.dump(final_metrics, f, indent=2)
+
+                if miou > self.best_miou:
+                    self.best_miou = miou
+                    self.best_epoch = self.epoch
+                    best_metrics = dict(final_metrics)
+                    best_metrics['best_epoch'] = int(self.best_epoch)
+                    with open(join(metrics_path, 'best_metrics.json'), 'w') as f:
+                        json.dump(best_metrics, f, indent=2)
+
+                    save_dict = {'epoch': self.epoch,
+                                 'model_state_dict': net.state_dict(),
+                                 'optimizer_state_dict': self.optimizer.state_dict(),
+                                 'saving_path': config.saving_path,
+                                 'best_miou': self.best_miou}
+                    torch.save(save_dict, join(checkpoint_directory, 'best_miou_chkp.tar'))
 
         print('Finished Training')
         return
@@ -283,13 +318,13 @@ class ModelTrainer:
     def validation(self, net, val_loader, config: Config):
 
         if config.dataset_task == 'classification':
-            self.object_classification_validation(net, val_loader, config)
+            return self.object_classification_validation(net, val_loader, config)
         elif config.dataset_task == 'segmentation':
-            self.object_segmentation_validation(net, val_loader, config)
+            return self.object_segmentation_validation(net, val_loader, config)
         elif config.dataset_task == 'cloud_segmentation':
-            self.cloud_segmentation_validation(net, val_loader, config)
+            return self.cloud_segmentation_validation(net, val_loader, config)
         elif config.dataset_task == 'slam_segmentation':
-            self.slam_segmentation_validation(net, val_loader, config)
+            return self.slam_segmentation_validation(net, val_loader, config)
         else:
             raise ValueError('No validation method implemented for this network type')
 
@@ -430,7 +465,7 @@ class ModelTrainer:
 
         # Do not validate if dataset has no validation cloud
         if val_loader.dataset.validation_split not in val_loader.dataset.all_splits:
-            return
+            return None
 
         # Number of classes including ignored labels
         nc_tot = val_loader.dataset.num_classes
@@ -603,8 +638,8 @@ class ModelTrainer:
         print('{:s} mean IoU = {:.1f}%'.format(config.dataset, mIoU))
 
         # Save predicted cloud occasionally
-        if config.saving and (self.epoch + 1) % config.checkpoint_gap == 0:
-            val_path = join(config.saving_path, 'val_preds_{:d}'.format(self.epoch + 1))
+        if config.saving and self.epoch % config.checkpoint_gap == 0:
+            val_path = join(config.saving_path, 'val_preds_{:d}'.format(self.epoch))
             if not exists(val_path):
                 makedirs(val_path)
             files = val_loader.dataset.files
@@ -651,7 +686,7 @@ class ModelTrainer:
             print('Save2 ..... {:.1f}s'.format(t7 - t6))
             print('\n************************\n')
 
-        return
+        return IoUs
 
     def slam_segmentation_validation(self, net, val_loader, config, debug=True):
         """
@@ -899,8 +934,6 @@ class ModelTrainer:
             print('\n************************\n')
 
         return
-
-
 
 
 

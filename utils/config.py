@@ -159,6 +159,13 @@ class Config:
     # Choose weights for class (used in segmentation loss). Empty list for no weights
     class_w = []
 
+    # Experiment switches used by S3DIS ablation runs
+    use_attention_gate = True
+    loss_type = 'ce'
+    validation_area = 'Area_5'
+    include_area7 = False
+    area7_sampling_ratio = 10
+
     # Deformable offset loss
     # 'point2point' fitting geometry by penalizing distance from deform point to input points
     # 'point2plane' fitting geometry by penalizing distance from deform point to input point triplet (not implemented)
@@ -263,6 +270,12 @@ class Config:
                 elif line_info[0] == 'class_w':
                     self.class_w = [float(w) for w in line_info[2:]]
 
+                elif line_info[0] == 'validation_area':
+                    self.validation_area = line_info[2]
+
+                elif line_info[0] == 'loss_type':
+                    self.loss_type = line_info[2]
+
                 elif hasattr(self, line_info[0]):
                     attr_type = type(getattr(self, line_info[0]))
                     if attr_type == bool:
@@ -362,6 +375,11 @@ class Config:
 
             text_file.write('weight_decay = {:f}\n'.format(self.weight_decay))
             text_file.write('segloss_balance = {:s}\n'.format(self.segloss_balance))
+            text_file.write('use_attention_gate = {:d}\n'.format(int(self.use_attention_gate)))
+            text_file.write('loss_type = {:s}\n'.format(self.loss_type))
+            text_file.write('validation_area = {:s}\n'.format(self.validation_area))
+            text_file.write('include_area7 = {:d}\n'.format(int(self.include_area7)))
+            text_file.write('area7_sampling_ratio = {:d}\n'.format(self.area7_sampling_ratio))
             text_file.write('class_w =')
             for a in self.class_w:
                 text_file.write(' {:.6f}'.format(a))
@@ -379,4 +397,3 @@ class Config:
                 text_file.write('epoch_steps = {:d}\n'.format(self.epoch_steps))
             text_file.write('validation_size = {:d}\n'.format(self.validation_size))
             text_file.write('checkpoint_gap = {:d}\n'.format(self.checkpoint_gap))
-

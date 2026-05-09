@@ -117,10 +117,26 @@ class S3DISDataset(PointCloudDataset):
         # List of files to process
         ply_path = join(self.path, self.train_path)
 
-        # Proportion of validation scenes
-        self.cloud_names = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_5', 'Area_6']
-        self.all_splits = [0, 1, 2, 3, 4, 5]
-        self.validation_split = getattr(config, 'validation_split', 4)
+        # Proportion of validation scenes. Area_7 is optional and is only
+        # allowed in the training split for extension experiments.
+        base_cloud_names = ['Area_1', 'Area_2', 'Area_3', 'Area_4', 'Area_5', 'Area_6']
+        self.validation_area = getattr(config, 'validation_area', 'Area_5')
+        if self.validation_area not in base_cloud_names:
+            raise ValueError('Unknown S3DIS validation_area: {:s}'.format(self.validation_area))
+
+        self.cloud_names = base_cloud_names[:]
+        include_area7 = getattr(config, 'include_area7', False)
+        if include_area7:
+            area7_ply = join(ply_path, 'Area_7.ply')
+            area7_raw = join(self.path, 'Area_7')
+            if not (exists(area7_ply) or isdir(area7_raw)):
+                raise FileNotFoundError('include_area7=True but neither {:s} nor {:s} exists'.format(area7_ply,
+                                                                                                      area7_raw))
+            if self.set == 'training':
+                self.cloud_names += ['Area_7']
+
+        self.all_splits = list(range(len(self.cloud_names)))
+        self.validation_split = self.cloud_names.index(self.validation_area)
 
         # Number of models used per epoch
         if self.set == 'training':
@@ -163,6 +179,13 @@ class S3DISDataset(PointCloudDataset):
             self.cloud_names = [f for i, f in enumerate(self.cloud_names)
                                 if self.all_splits[i] == self.validation_split]
 
+        self.cloud_sampling_weights = self.build_cloud_sampling_weights()
+        print('S3DIS {:s} clouds: {:s}'.format(self.set, ', '.join(self.cloud_names)))
+        if self.set == 'training':
+            print('S3DIS training cloud sampling weights: {:s}'.format(
+                ', '.join(['{:s}:{:.3f}'.format(n, w) for n, w in zip(self.cloud_names,
+                                                                       self.cloud_sampling_weights)])))
+
         if 0 < self.config.first_subsampling_dl <= 0.01:
             raise ValueError('subsampling_parameter too low (should be over 1 cm')
 
@@ -202,6 +225,8 @@ class S3DISDataset(PointCloudDataset):
             self.min_potentials = torch.from_numpy(np.array(self.min_potentials, dtype=np.float64))
             self.argmin_potentials.share_memory_()
             self.min_potentials.share_memory_()
+            self.cloud_sampling_weights = torch.from_numpy(self.cloud_sampling_weights.astype(np.float64))
+            self.cloud_sampling_weights.share_memory_()
             for i, _ in enumerate(self.pot_trees):
                 self.potentials[i].share_memory_()
 
@@ -228,6 +253,23 @@ class S3DISDataset(PointCloudDataset):
             np.random.seed(42)
 
         return
+
+    def build_cloud_sampling_weights(self):
+        """
+        Build per-cloud sampling weights. When Area_7 is enabled, the ratio is
+        interpreted as official training areas as a group : Area_7.
+        """
+        weights = np.ones(len(self.cloud_names), dtype=np.float64)
+
+        if self.set == 'training' and getattr(self.config, 'include_area7', False) and 'Area_7' in self.cloud_names:
+            ratio = float(getattr(self.config, 'area7_sampling_ratio', 10))
+            official_inds = [i for i, name in enumerate(self.cloud_names) if name != 'Area_7']
+            area7_ind = self.cloud_names.index('Area_7')
+            weights[:] = 0.0
+            weights[official_inds] = ratio / max(len(official_inds), 1)
+            weights[area7_ind] = 1.0
+
+        return weights
 
     def __len__(self):
         """
@@ -302,8 +344,10 @@ class S3DISDataset(PointCloudDataset):
                     print(message)
                     self.worker_waiting[wid] = 1
 
-                # Get potential minimum
-                cloud_ind = int(torch.argmin(self.min_potentials))
+                # Get potential minimum. A larger sampling weight keeps the
+                # weighted potential lower, so that cloud is selected more often.
+                weighted_min_potentials = self.min_potentials / self.cloud_sampling_weights
+                cloud_ind = int(torch.argmin(weighted_min_potentials))
                 point_ind = int(self.argmin_potentials[cloud_ind])
 
                 # Get potential points from tree structure

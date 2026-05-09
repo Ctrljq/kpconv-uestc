@@ -22,12 +22,20 @@
 #
 
 # Common libs
+import argparse
+import json
+import platform
 import signal
 import os
+import sys
+import time
+from os import makedirs
+from os.path import exists
 
 # Dataset
 from datasets.S3DIS import *
 from torch.utils.data import DataLoader
+import torch
 
 from utils.config import Config
 from utils.trainer import ModelTrainer
@@ -165,7 +173,7 @@ class S3DISConfig(Config):
     #####################
 
     # Maximal number of epochs
-    max_epoch = 1000
+    max_epoch = 400
 
     # Learning rate management
     learning_rate = 1e-2
@@ -194,6 +202,16 @@ class S3DISConfig(Config):
     augment_noise = 0.001
     augment_color = 0.8
 
+    # Experiment switches for ablation studies
+    use_attention_gate = True
+    loss_type = 'ce'
+
+    # Area_5 is kept as validation/test by default. Area_7 can be mixed into
+    # training at a low frequency for non-official extension experiments.
+    validation_area = 'Area_5'
+    include_area7 = False
+    area7_sampling_ratio = 10
+
     # The way we balance segmentation loss
     #   > 'none': Each point in the whole batch has the same contribution.
     #   > 'class': Each class has the same contribution (points are weighted according to class balance)
@@ -205,7 +223,88 @@ class S3DISConfig(Config):
 
     # Do we nee to save convergence
     saving = True
-    saving_path = '/root/autodl-tmp/KPConv_results/'
+    saving_path = None
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train KPFCNN on S3DIS with ablation switches.')
+    parser.add_argument('legacy_saving_path', nargs='?', default=None,
+                        help='Backward-compatible positional saving path.')
+    parser.add_argument('--saving-path', default=None, help='Directory where logs and checkpoints are saved.')
+    parser.add_argument('--epochs', type=int, default=None, help='Override max_epoch.')
+    parser.add_argument('--attention', choices=['on', 'off'], default=None,
+                        help='Enable or disable AttentionGate skip filtering.')
+    parser.add_argument('--loss', choices=['ce', 'weighted_ce'], default=None,
+                        help='Loss type for segmentation logits.')
+    parser.add_argument('--include-area7', choices=['on', 'off'], default=None,
+                        help='Whether to include Area_7 in the training split.')
+    parser.add_argument('--area7-ratio', type=int, default=None,
+                        help='Official training areas : Area_7 sampling ratio, e.g. 10 means 10:1.')
+    parser.add_argument('--gpu', default='0', help='CUDA_VISIBLE_DEVICES value.')
+    parser.add_argument('--previous-training-path', default=None,
+                        help='Optional result directory to restore from. Defaults to a fresh training.')
+    parser.add_argument('--checkpoint-index', type=int, default=None,
+                        help='Checkpoint index to restore. Omit to use current_chkp.tar.')
+    return parser.parse_args()
+
+
+def compute_class_weights(dataset):
+    """Compute inverse-square-root class weights from the selected training split."""
+    counts = np.zeros(dataset.num_classes, dtype=np.float64)
+    for labels in dataset.input_labels:
+        for i, label_value in enumerate(dataset.label_values):
+            counts[i] += np.sum(labels == label_value)
+
+    counts = np.maximum(counts, 1.0)
+    proportions = counts / np.sum(counts)
+    weights = np.sqrt(1.0 / proportions)
+    weights = weights / np.mean(weights)
+    return weights.astype(np.float32).tolist(), counts.astype(np.int64).tolist()
+
+
+def write_run_info(config, training_dataset, args, class_counts=None):
+    if not config.saving or config.saving_path is None:
+        return
+
+    if not exists(config.saving_path):
+        makedirs(config.saving_path)
+
+    area7_percent = 0.0
+    if config.include_area7:
+        area7_percent = 100.0 / (float(config.area7_sampling_ratio) + 1.0)
+
+    info = {
+        'experiment_id': os.path.basename(os.path.normpath(config.saving_path)),
+        'epochs': config.max_epoch,
+        'use_attention_gate': bool(config.use_attention_gate),
+        'loss_type': config.loss_type,
+        'include_area7': bool(config.include_area7),
+        'area7_sampling_ratio': int(config.area7_sampling_ratio),
+        'area7_expected_sampling_percent': round(area7_percent, 3),
+        'effective_train_areas': training_dataset.cloud_names,
+        'validation_area': config.validation_area,
+        'batch_num': config.batch_num,
+        'epoch_steps': config.epoch_steps,
+        'validation_size': config.validation_size,
+        'learning_rate': config.learning_rate,
+        'checkpoint_gap': config.checkpoint_gap,
+        'class_counts': class_counts,
+        'class_w': [float(w) for w in config.class_w],
+        'gpu': args.gpu,
+        'python': sys.version.replace('\n', ' '),
+        'torch': torch.__version__,
+        'cuda': torch.version.cuda,
+        'platform': platform.platform(),
+        'command': ' '.join(sys.argv),
+    }
+
+    with open(os.path.join(config.saving_path, 'run_info.md'), 'w') as f:
+        f.write('# S3DIS Experiment Run Info\n\n')
+        for key, value in info.items():
+            f.write('- {}: {}\n'.format(key, value))
+
+    with open(os.path.join(config.saving_path, 'run_info.json'), 'w') as f:
+        json.dump(info, f, indent=2)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -215,13 +314,14 @@ class S3DISConfig(Config):
 #
 
 if __name__ == '__main__':
+    args = parse_args()
 
     ############################
     # Initialize the environment
     ############################
 
     # Set which gpu is going to be used
-    GPU_ID = '0'
+    GPU_ID = args.gpu
 
     # Set GPU visible device
     os.environ['CUDA_VISIBLE_DEVICES'] = GPU_ID
@@ -231,15 +331,14 @@ if __name__ == '__main__':
     ###############
 
     # Choose here if you want to start training from a previous snapshot (None for new training)
-    # previous_training_path = 'Log_2026-03-29_17-51-16'
-    previous_training_path = '/root/autodl-tmp/KPConv_results'
+    previous_training_path = args.previous_training_path
 
     # Choose index of checkpoint to start from. If None, uses the latest chkp
-    chkp_idx = None
+    chkp_idx = args.checkpoint_index
     if previous_training_path:
 
         # Find all snapshot in the chosen training folder
-        chkp_path = os.path.join('results', previous_training_path, 'checkpoints')
+        chkp_path = os.path.join(previous_training_path, 'checkpoints')
         chkps = [f for f in os.listdir(chkp_path) if f[:4] == 'chkp']
 
         # Find which snapshot to restore
@@ -247,7 +346,7 @@ if __name__ == '__main__':
             chosen_chkp = 'current_chkp.tar'
         else:
             chosen_chkp = np.sort(chkps)[chkp_idx]
-        chosen_chkp = os.path.join('results', previous_training_path, 'checkpoints', chosen_chkp)
+        chosen_chkp = os.path.join(previous_training_path, 'checkpoints', chosen_chkp)
 
     else:
         chosen_chkp = None
@@ -263,17 +362,40 @@ if __name__ == '__main__':
     # Initialize configuration class
     config = S3DISConfig()
     if previous_training_path:
-        config.load(os.path.join('results', previous_training_path))
-        config.saving_path = '/root/autodl-tmp/KPConv_results/'
-        config.max_epoch = 1000
+        config.load(previous_training_path)
 
-    # Get path from argument if given
-    if len(sys.argv) > 1:
-        config.saving_path = sys.argv[1]
+    # Apply command-line overrides
+    saving_path = args.saving_path or args.legacy_saving_path
+    if saving_path is not None:
+        config.saving_path = saving_path
+    if args.epochs is not None:
+        config.max_epoch = args.epochs
+    if args.attention is not None:
+        config.use_attention_gate = args.attention == 'on'
+    if args.loss is not None:
+        config.loss_type = args.loss
+    if args.include_area7 is not None:
+        config.include_area7 = args.include_area7 == 'on'
+    if args.area7_ratio is not None:
+        if args.area7_ratio <= 0:
+            raise ValueError('--area7-ratio must be positive')
+        config.area7_sampling_ratio = args.area7_ratio
+
+    config.lr_decays = {i: 0.1 ** (1 / 150) for i in range(1, config.max_epoch)}
 
     # Initialize datasets
     training_dataset = S3DISDataset(config, set='training', use_potentials=True)
     test_dataset = S3DISDataset(config, set='validation', use_potentials=True)
+
+    if config.loss_type == 'weighted_ce':
+        config.class_w, class_counts = compute_class_weights(training_dataset)
+        config.segloss_balance = 'class'
+    else:
+        config.class_w = []
+        config.segloss_balance = 'none'
+        class_counts = None
+
+    write_run_info(config, training_dataset, args, class_counts=class_counts)
 
     # Initialize samplers
     training_sampler = S3DISSampler(training_dataset)
