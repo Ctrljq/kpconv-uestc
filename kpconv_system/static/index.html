@@ -43,13 +43,20 @@
 
         <form id="segmentForm" class="form">
           <label class="field upload-field">
-            <span>点云文件</span>
-            <input id="plyFile" name="file" type="file" accept=".ply" required />
+            <span>本地点云文件</span>
+            <input id="plyFile" name="file" type="file" accept=".ply" />
             <div class="upload-surface">
               <span class="upload-icon">PLY</span>
               <strong id="fileLabel">选择或拖入点云文件</strong>
               <small>支持二进制 .ply，包含 x/y/z，颜色字段可选</small>
             </div>
+          </label>
+
+          <label class="field">
+            <span>服务器点云文件</span>
+            <select id="cloudSelect" name="cloud_path">
+              <option value="">正在扫描服务器点云...</option>
+            </select>
           </label>
 
           <label class="field">

@@ -4,6 +4,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -11,15 +12,20 @@ from fastapi.staticfiles import StaticFiles
 
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = Path(os.environ.get("KPCONV_PROJECT_ROOT", BASE_DIR.parents[0])).expanduser().resolve()
+_default_root = BASE_DIR.parent
+if not ((_default_root / "models").exists() and (_default_root / "datasets").exists()):
+    candidate = BASE_DIR.parents[1] / "source_code" / "kpconv-uestc"
+    if candidate.exists():
+        _default_root = candidate
+KPCONV_ROOT = Path(os.environ.get("KPCONV_ROOT", _default_root)).expanduser().resolve()
+PROJECT_ROOT = KPCONV_ROOT.parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
 WEIGHTS_DIR = BASE_DIR / "weights"
-KPCONV_RESULTS_DIR = Path(
-    os.environ.get("KPCONV_RESULTS_DIR", PROJECT_ROOT / "source_code" / "kpconv-uestc" / "results")
-).expanduser().resolve()
+KPCONV_RESULTS_DIR = Path(os.environ.get("KPCONV_RESULTS_DIR", KPCONV_ROOT / "results")).expanduser().resolve()
 DEFAULT_REMOTE_EXPERIMENTS_DIR = Path("/root/autodl-tmp/s3dis_area5_400ep")
+DEFAULT_REMOTE_CLOUD_DIR = Path("/root/autodl-tmp/S3DIS/Stanford3dDataset_v1.2_Aligned_Version/original_ply")
 
 for folder in (UPLOAD_DIR, OUTPUT_DIR, WEIGHTS_DIR):
     folder.mkdir(parents=True, exist_ok=True)
@@ -39,9 +45,18 @@ def api_weights() -> dict:
     return {"weights": _discover_weights(*roots)}
 
 
+@app.get("/api/clouds")
+def api_clouds() -> dict:
+    return {"clouds": _discover_clouds(*_cloud_roots())}
+
+
 @app.post("/api/segment")
-async def api_segment(file: UploadFile = File(...), weight_path: str = Form(...)) -> dict:
-    if not file.filename or not file.filename.lower().endswith(".ply"):
+async def api_segment(
+    file: Optional[UploadFile] = File(None),
+    cloud_path: str = Form(""),
+    weight_path: str = Form(...),
+) -> dict:
+    if file and file.filename and not file.filename.lower().endswith(".ply"):
         raise HTTPException(status_code=400, detail="请上传 .ply 点云文件。")
 
     checkpoint = _validate_weight_path(weight_path)
@@ -51,9 +66,14 @@ async def api_segment(file: UploadFile = File(...), weight_path: str = Form(...)
     job_upload_dir.mkdir(parents=True, exist_ok=True)
     job_output_dir.mkdir(parents=True, exist_ok=True)
 
-    input_path = job_upload_dir / _safe_filename(file.filename)
-    with input_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    if file and file.filename:
+        input_path = job_upload_dir / _safe_filename(file.filename)
+        with input_path.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+    elif cloud_path:
+        input_path = _validate_cloud_path(cloud_path)
+    else:
+        raise HTTPException(status_code=400, detail="请上传本地点云，或选择服务器上的点云文件。")
 
     try:
         segment_ply = _load_inference_functions()
@@ -105,6 +125,20 @@ def _validate_weight_path(raw_path: str) -> Path:
     return path
 
 
+def _validate_cloud_path(raw_path: str) -> Path:
+    try:
+        path = Path(raw_path).expanduser().resolve()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="点云路径无效。") from exc
+
+    allowed_roots = [root.resolve() for root in _cloud_roots()]
+    if not any(_is_relative_to(path, root) for root in allowed_roots):
+        raise HTTPException(status_code=400, detail="点云文件必须位于系统允许扫描的点云目录。")
+    if not path.exists() or path.suffix.lower() != ".ply":
+        raise HTTPException(status_code=400, detail="请选择存在的 .ply 点云文件。")
+    return path
+
+
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -145,12 +179,60 @@ def _discover_weights(*roots: Path) -> list[dict]:
     return items
 
 
+def _discover_clouds(*roots: Path) -> list[dict]:
+    cloud_files: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        cloud_files.extend(root.rglob("*.ply"))
+
+    items = []
+    for path in sorted(set(cloud_files)):
+        stat = path.stat()
+        items.append(
+            {
+                "id": str(path.resolve()),
+                "name": _display_cloud_name(path),
+                "path": str(path.resolve()),
+                "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            }
+        )
+    return items
+
+
+def _display_cloud_name(path: Path) -> str:
+    parent = path.parent.name
+    if parent and parent != ".":
+        return f"{parent} / {path.name}"
+    return path.name
+
+
 def _weight_roots() -> list[Path]:
     roots = [WEIGHTS_DIR.resolve(), KPCONV_RESULTS_DIR.resolve()]
     if DEFAULT_REMOTE_EXPERIMENTS_DIR.exists():
         roots.append(DEFAULT_REMOTE_EXPERIMENTS_DIR.resolve())
 
     extra = os.environ.get("KPCONV_WEIGHT_DIRS", "")
+    for raw in extra.split(":"):
+        raw = raw.strip()
+        if raw:
+            roots.append(Path(raw).expanduser().resolve())
+
+    deduped = []
+    seen = set()
+    for root in roots:
+        if str(root) not in seen:
+            deduped.append(root)
+            seen.add(str(root))
+    return deduped
+
+
+def _cloud_roots() -> list[Path]:
+    roots = []
+    if DEFAULT_REMOTE_CLOUD_DIR.exists():
+        roots.append(DEFAULT_REMOTE_CLOUD_DIR.resolve())
+
+    extra = os.environ.get("KPCONV_CLOUD_DIRS", "")
     for raw in extra.split(":"):
         raw = raw.strip()
         if raw:

@@ -62,6 +62,7 @@ Log_xxx/
 ```bash
 export KPCONV_ROOT=/root/KPConv-PyTorch
 export KPCONV_WEIGHT_DIRS=/root/autodl-tmp/s3dis_area5_400ep
+export KPCONV_CLOUD_DIRS=/root/autodl-tmp/S3DIS/Stanford3dDataset_v1.2_Aligned_Version/original_ply
 python app.py
 ```
 

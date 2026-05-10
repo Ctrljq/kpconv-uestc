@@ -4,6 +4,7 @@ import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 
 const form = document.querySelector("#segmentForm");
 const fileInput = document.querySelector("#plyFile");
+const cloudSelect = document.querySelector("#cloudSelect");
 const weightSelect = document.querySelector("#weightSelect");
 const runButton = document.querySelector("#runButton");
 const statusText = document.querySelector("#statusText");
@@ -24,6 +25,7 @@ let activeObject;
 
 initViewer();
 loadWeights();
+loadClouds();
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
@@ -34,10 +36,19 @@ fileInput.addEventListener("change", () => {
   }
 });
 
+cloudSelect.addEventListener("change", () => {
+  if (cloudSelect.value) {
+    fileInput.value = "";
+    fileLabel.textContent = "使用服务器点云文件";
+    setPipelineStep("upload");
+    setStatus(`已选择服务器点云：${cloudSelect.selectedOptions[0].textContent}`);
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!fileInput.files.length) {
-    setStatus("请先选择 .ply 点云文件。", true);
+  if (!fileInput.files.length && !cloudSelect.value) {
+    setStatus("请先上传本地点云，或选择服务器上的 .ply 点云文件。", true);
     return;
   }
   if (!weightSelect.value) {
@@ -46,7 +57,11 @@ form.addEventListener("submit", async (event) => {
   }
 
   const body = new FormData();
-  body.append("file", fileInput.files[0]);
+  if (fileInput.files.length) {
+    body.append("file", fileInput.files[0]);
+  } else {
+    body.append("cloud_path", cloudSelect.value);
+  }
   body.append("weight_path", weightSelect.value);
 
   runButton.disabled = true;
@@ -108,6 +123,33 @@ async function loadWeights() {
     }
   } catch (error) {
     setStatus(`权重扫描失败：${error.message}`, true);
+  }
+}
+
+async function loadClouds() {
+  try {
+    const response = await fetch("/api/clouds");
+    const payload = await response.json();
+    cloudSelect.innerHTML = "";
+
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "不使用服务器点云";
+    cloudSelect.append(empty);
+
+    if (!payload.clouds.length) {
+      empty.textContent = "未扫描到服务器点云，可上传本地 PLY";
+      return;
+    }
+
+    for (const item of payload.clouds) {
+      const option = document.createElement("option");
+      option.value = item.path;
+      option.textContent = `${item.name}（${item.size_mb} MB）`;
+      cloudSelect.append(option);
+    }
+  } catch (error) {
+    cloudSelect.innerHTML = '<option value="">服务器点云扫描失败</option>';
   }
 }
 

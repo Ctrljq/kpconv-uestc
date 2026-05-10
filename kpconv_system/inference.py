@@ -13,10 +13,15 @@ import torch
 from sklearn.neighbors import KDTree
 
 
-PROJECT_ROOT = Path(os.environ.get("KPCONV_PROJECT_ROOT", Path(__file__).resolve().parents[1])).expanduser().resolve()
-KPCONV_ROOT = Path(
-    os.environ.get("KPCONV_ROOT", PROJECT_ROOT / "source_code" / "kpconv-uestc")
-).expanduser().resolve()
+BASE_DIR = Path(__file__).resolve().parent
+KPCONV_ROOT = Path(os.environ.get("KPCONV_ROOT", "")).expanduser()
+if not str(KPCONV_ROOT):
+    if (BASE_DIR.parent / "models").exists() and (BASE_DIR.parent / "datasets").exists():
+        KPCONV_ROOT = BASE_DIR.parent
+    else:
+        KPCONV_ROOT = BASE_DIR.parents[1] / "source_code" / "kpconv-uestc"
+KPCONV_ROOT = KPCONV_ROOT.resolve()
+PROJECT_ROOT = KPCONV_ROOT.parent
 
 if str(KPCONV_ROOT) not in sys.path:
     sys.path.insert(0, str(KPCONV_ROOT))
