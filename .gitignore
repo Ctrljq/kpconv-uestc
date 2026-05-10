@@ -41,6 +41,7 @@ core
 
 # --- 日志与临时文件 ---
 *.log
+!experiments/s3dis_area5_400ep/**/console.log
 *.log.*
 nohup.out
 *.tmp
