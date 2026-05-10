@@ -12,11 +12,14 @@ from fastapi.staticfiles import StaticFiles
 
 
 BASE_DIR = Path(__file__).resolve().parent
-_default_root = BASE_DIR.parent
-if not ((_default_root / "models").exists() and (_default_root / "datasets").exists()):
-    candidate = BASE_DIR.parents[1] / "source_code" / "kpconv-uestc"
-    if candidate.exists():
+_default_root = None
+for candidate in [BASE_DIR.parent, *BASE_DIR.parents]:
+    if (candidate / "models").exists() and (candidate / "datasets").exists() and (candidate / "utils").exists():
         _default_root = candidate
+        break
+if _default_root is None:
+    candidate = BASE_DIR.parents[1] / "source_code" / "kpconv-uestc"
+    _default_root = candidate if candidate.exists() else BASE_DIR.parent
 KPCONV_ROOT = Path(os.environ.get("KPCONV_ROOT", _default_root)).expanduser().resolve()
 PROJECT_ROOT = KPCONV_ROOT.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -277,12 +280,20 @@ def _load_inference_functions():
         from inference import segment_ply
     except ModuleNotFoundError as exc:
         missing = exc.name or "依赖"
-        raise HTTPException(
-            status_code=500,
-            detail=(
+        if missing == "datasets":
+            hint = (
+                f"没有找到 KPConv 源码目录中的 datasets 包。当前 KPCONV_ROOT={KPCONV_ROOT}。"
+                "请确认该目录下存在 datasets、models、utils 三个文件夹，"
+                "或启动前执行 export KPCONV_ROOT=/root/KPConv-PyTorch。"
+            )
+        else:
+            hint = (
                 f"后端推理依赖缺失：{missing}。如果只是打开网页，请确认 FastAPI 服务已启动；"
                 "如果要真实分割，请在安装了 PyTorch、scikit-learn 和 KPConv C++ wrappers 的环境中运行。"
-            ),
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=hint,
         ) from exc
     return segment_ply
 

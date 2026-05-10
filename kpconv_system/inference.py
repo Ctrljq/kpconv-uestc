@@ -16,8 +16,10 @@ from sklearn.neighbors import KDTree
 BASE_DIR = Path(__file__).resolve().parent
 KPCONV_ROOT = Path(os.environ.get("KPCONV_ROOT", "")).expanduser()
 if not str(KPCONV_ROOT):
-    if (BASE_DIR.parent / "models").exists() and (BASE_DIR.parent / "datasets").exists():
-        KPCONV_ROOT = BASE_DIR.parent
+    for candidate in [BASE_DIR.parent, *BASE_DIR.parents]:
+        if (candidate / "models").exists() and (candidate / "datasets").exists() and (candidate / "utils").exists():
+            KPCONV_ROOT = candidate
+            break
     else:
         KPCONV_ROOT = BASE_DIR.parents[1] / "source_code" / "kpconv-uestc"
 KPCONV_ROOT = KPCONV_ROOT.resolve()
@@ -25,6 +27,12 @@ PROJECT_ROOT = KPCONV_ROOT.parent
 
 if str(KPCONV_ROOT) not in sys.path:
     sys.path.insert(0, str(KPCONV_ROOT))
+
+for module_name in ("datasets", "models", "utils"):
+    module = sys.modules.get(module_name)
+    module_file = getattr(module, "__file__", "") if module else ""
+    if module and module_file and not module_file.startswith(str(KPCONV_ROOT)):
+        del sys.modules[module_name]
 
 from datasets.common import PointCloudDataset, grid_subsampling  # noqa: E402
 from datasets.S3DIS import S3DISCustomBatch  # noqa: E402
