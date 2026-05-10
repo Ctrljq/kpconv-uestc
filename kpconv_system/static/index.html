@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>基于 KPConv-AttentionGate 的室内点云语义分割系统</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="control-panel">
+        <header class="brand-block">
+          <div class="brand-mark">KP</div>
+          <div>
+            <p class="eyebrow">Point Cloud Segmentation</p>
+            <h1>基于 KPConv-AttentionGate 的室内点云语义分割系统</h1>
+            <p class="subtitle">上传室内点云，选择训练好的 S3DIS 权重，生成语义分割彩色结果。</p>
+          </div>
+        </header>
+
+        <section class="metric-strip" aria-label="系统能力概览">
+          <div>
+            <strong>13</strong>
+            <span>S3DIS 类别</span>
+          </div>
+          <div>
+            <strong>PLY</strong>
+            <span>输入/输出</span>
+          </div>
+          <div>
+            <strong>3D</strong>
+            <span>交互预览</span>
+          </div>
+        </section>
+
+        <form id="segmentForm" class="form">
+          <label class="field upload-field">
+            <span>点云文件</span>
+            <input id="plyFile" name="file" type="file" accept=".ply" required />
+            <div class="upload-surface">
+              <span class="upload-icon">PLY</span>
+              <strong id="fileLabel">选择或拖入点云文件</strong>
+              <small>支持二进制 .ply，包含 x/y/z，颜色字段可选</small>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>模型权重</span>
+            <select id="weightSelect" name="weight_path" required>
+              <option value="">正在扫描权重...</option>
+            </select>
+          </label>
+
+          <button id="runButton" type="submit">开始分割</button>
+        </form>
+
+        <section class="pipeline-card">
+          <div class="pipeline-step active" data-step="upload">
+            <span>1</span>
+            <strong>上传</strong>
+          </div>
+          <div class="pipeline-line"></div>
+          <div class="pipeline-step" data-step="infer">
+            <span>2</span>
+            <strong>推理</strong>
+          </div>
+          <div class="pipeline-line"></div>
+          <div class="pipeline-step" data-step="view">
+            <span>3</span>
+            <strong>可视化</strong>
+          </div>
+        </section>
+
+        <section class="status-card">
+          <h2>状态</h2>
+          <p id="statusText">等待上传点云和选择权重。</p>
+          <a id="downloadLink" class="download-link hidden" href="#" download>下载彩色 PLY</a>
+        </section>
+
+        <section class="stats-card">
+          <h2>类别统计</h2>
+          <div id="summaryText" class="summary">暂无结果</div>
+          <div id="classStats" class="class-list"></div>
+        </section>
+      </aside>
+
+      <section class="viewer-panel">
+        <div class="viewer-bg-grid"></div>
+        <div class="viewer-toolbar">
+          <div>
+            <p>Viewer</p>
+            <strong>语义分割结果</strong>
+          </div>
+          <span id="pointBadge">No cloud</span>
+        </div>
+        <div id="viewer"></div>
+        <div id="viewerHint" class="viewer-hint">
+          <div class="hint-orbit">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <strong>等待点云结果</strong>
+          <p>分割完成后将在这里显示彩色三维点云，可旋转、缩放和平移查看。</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,1 +1,5 @@
 experiment,use_attention_gate,loss_type,include_area7,area7_sampling_ratio,best_epoch,best_mIoU,final_mIoU,ceiling,floor,wall,beam,column,window,door,chair,table,bookcase,sofa,board,clutter
+E01_baseline_ce,false,ce,false,,246,64.01,60.18,90.60,98.60,73.80,64.00,14.30,38.90,46.60,75.70,76.70,63.00,90.00,56.00,43.90
+E02_attentiongate_ce,true,ce,false,,389,69.62,55.92,96.10,98.20,79.90,69.60,21.40,58.40,46.80,89.30,80.00,70.50,87.70,55.30,51.90
+E03_baseline_weightedce,false,weighted_ce,false,,308,69.93,64.32,92.20,98.60,76.30,69.90,27.60,61.70,60.10,78.60,76.30,67.20,87.50,56.20,56.90
+E04_attentiongate_weightedce,true,weighted_ce,false,,327,70.29,57.93,96.60,98.20,74.10,70.30,24.40,64.90,52.90,77.30,77.00,67.70,91.70,61.70,57.00

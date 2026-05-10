@@ -4,9 +4,8 @@ Data Preparation
 
 Preparing ply files
 Done in 0.0s
-S3DIS training clouds: Area_1, Area_2, Area_3, Area_4, Area_6, Area_7
-S3DIS training cloud sampling weights: Area_1:2.000, Area_2:2.000, Area_3:2.000, Area_4:2.000, Area_6:2.000, Area_7:1.000
-
+S3DIS training clouds: Area_1, Area_2, Area_3, Area_4, Area_6
+S3DIS training cloud sampling weights: Area_1:2.000, Area_2:2.000, Area_3:2.000, Area_4:2.000, Area_6:2.000
 Found KDTree for cloud Area_1, subsampled at 0.030
 145.2 MB loaded in 0.2s
 
@@ -22,8 +21,6 @@ Found KDTree for cloud Area_4, subsampled at 0.030
 Found KDTree for cloud Area_6, subsampled at 0.030
 134.7 MB loaded in 0.2s
 
-Found KDTree for cloud Area_7, subsampled at 0.030
-254.9 MB loaded in 0.5s
 
 Preparing potentials
 Done in 0.1s
